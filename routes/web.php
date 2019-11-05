@@ -11,7 +11,15 @@
 |
 */
 
+use Illuminate\Support\Facades\DB;
+
 Route::get('/', function () {
-//    dd('a');
+  dd('a');
     return view('welcome');
 });
+Route::get('test_exec',function() {
+  exec("d:\\exec.bat",$out);
+  dd($out);
+});
+
+Auth::routes();

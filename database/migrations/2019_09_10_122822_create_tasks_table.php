@@ -15,6 +15,13 @@ class CreateTasksTable extends Migration
     {
         Schema::create('tasks', function (Blueprint $table) {
             $table->increments('id');
+            $table->unsignedBigInteger('game_id')->comment('游戏id');
+            $table->unsignedBigInteger('game_verify_id')->comment('项目版本id');
+            $table->unsignedBigInteger('channel_id')->comment('渠道name');
+            $table->unsignedBigInteger('channel_version_id')->comment('渠道版本');
+            $table->unsignedBigInteger('signature_id')->comment('签名ID');
+            $table->string('system',200)->comment('系统版本');
+            $table->unsignedBigInteger('state')->comment('状态');
             $table->timestamps();
         });
     }

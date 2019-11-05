@@ -17,7 +17,8 @@ class CreateGameVersionsTable extends Migration
             $table->increments('id');
             $table->unsignedInteger('game_id')->comment('所属游戏');
             $table->string('version','50')->comment('版本号');
-            $table->
+            $table->string('compile',100)->comment('反编译');
+            $table->string('abstract',200)->comment('说明');
             $table->timestamps();
         });
     }
