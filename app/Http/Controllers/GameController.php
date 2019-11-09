@@ -219,13 +219,14 @@ class GameController extends Controller
   public function game_has_channel(Request $request)
   {
     $game = Game::find($request->id);
-    $channel = Channel::find($request->cid);
-    if (!$this->validateGameChannel($request->id, $request->cid)) {
-      $path = '../../MolePackageTool-Android/channels/' . $channel->alias . '/configs/' . $game['game_id'] . '/assets';
-      Upload::mkdir_dir($path);
-      Upload::touch_file($path . '/channel.txt', 0);
-      $game->channels()->attach($request->cid);
+    $list = $this->get_json();
+    foreach ($list as $item) {
+      if (in_array($item->id, $request->cid)) {
+        $path = '../../MolePackageTool-Android/channels/' . $item->name . '/configs/' . $game['game_id'];
+        Upload::mkdir_dir($path);
+      }
     }
+    $game->channels()->syncWithoutDetaching($request->cid);
     return response()->json([
       'access_token' => $request->token,
       'token_type' => 'bearer',
@@ -283,26 +284,21 @@ class GameController extends Controller
   public function get_game_channel(Request $request)
   {
     $game_id = $request->id;
-    $model = Channel::whereHas('games', function ($query) use ($game_id) {
-      return $query->where('games.id', '=', $game_id);
-    })->leftJoin('game_has_channels', 'game_has_channels.channel_id', '=', 'channels.id')
-      ->where('game_has_channels.game_id', '=', $game_id)
-      ->select('channels.*', 'game_has_channels.id as gc_id', 'game_has_channels.signature_id as signId')
-      ->get();
+    $list = $this->get_json();
+    $model = GameHasChannel::where('game_id', '=', $game_id)->get();
     foreach ($model as $key => $item) {
-      $data = ChannelVersion::where('gc_id', '=', $item['gc_id'])->orderBy('updated_at', 'desc')->first();
-      $model[$key]['compile'] = false;
-      $model[$key]['gameSettings'] = false;
-      if ($data['compile'] == 1) {
-        $model[$key]['compile'] = true;
-      }
-      $model[$key]['channel_version'] = $data['val'];
-      if ($data['gameSettings'] == 1) {
-        $model[$key]['gameSettings'] = true;
+      foreach ($list as $k => $i) {
+        if ($item['channel_id'] == $i->id) {
+          $model[$key]['name'] = $i->desc;
+          $model[$key]['alias'] = $i->name;
+        }
       }
     }
     return response()->json([
-      'data' => $model
+      'data' => $model,
+      'access_token' => $request->token,
+      'token_type' => 'bearer',
+      'expires_in' => auth('api')->factory()->getTTL() * 60
     ]);
   }
   /**
@@ -395,6 +391,11 @@ class GameController extends Controller
       'expires_in' => auth('api')->factory()->getTTL() * 60
     ]);
   }
+  /**
+   * @description: 获取当前目录
+   * @param {type} 
+   * @return: 
+   */
   public function get_dir()
   {
     $path = dirname(dirname($_SERVER['DOCUMENT_ROOT']));
@@ -454,7 +455,7 @@ class GameController extends Controller
     ], 200);
   }
   /**
-   * @description: 
+   * @description: 打包
    * @param {type} 
    * @return: 
    */
@@ -472,7 +473,8 @@ class GameController extends Controller
           'game_name' => $game->name,
           'channel_name' => $cItem['alias'],
           'path' => $path,
-          'version' => $gItem['version'] . $cItem['channel_version']
+          'version' => $gItem['version'] . $cItem['channel_version'],
+          'uid' => $this->get_userId()
         ];
         $this->save_task($data, $game, $gItem, $cItem, $task_id);
         $job = (new ExecJob($data));
@@ -495,8 +497,8 @@ class GameController extends Controller
     $task = new Task;
     $task->game_id = $game->id;
     $task->game_version_id = $gItem['id'];
-    $task->channel_id = $cItem['id'];
-    $task->channel_version_id = $cItem['id'];
+    $task->channel_name = $cItem['name'];
+    // $task->channel_version_id = $cItem['id'];
     $task->system = 'Android';
     $task->task_id = $task_id;
     $task->signature_id = $cItem['signId'];
@@ -515,14 +517,17 @@ class GameController extends Controller
   {
     $data = Task::leftJoin('games', 'games.id', '=', 'tasks.game_id')
       ->leftJoin('game_versions', 'game_versions.id', '=', 'tasks.game_version_id')
-      ->leftJoin('channels', 'channels.id', '=', 'tasks.channel_id')
-      ->leftJoin('channel_versions', 'channel_versions.id', '=', 'tasks.channel_version_id')
       ->leftJoin('signatures', 'signatures.id', '=', 'tasks.signature_id')
-      ->where('tasks.userId','=',$this->get_userId())
-      ->select('tasks.*', 'games.name as game_name', 'games.game_id as game_id', 'game_versions.version', 'channel_versions.val as channel_version', 'channels.alias', 'signatures.name as sign_name')
+      ->where('tasks.userId', '=', $this->get_userId())
+      ->select('tasks.*', 'games.name as game_name', 'games.game_id as game_id', 'game_versions.version', 'signatures.name as sign_name')
+      ->orderBy('tasks.created_at', 'desc')
+      ->offset(((int) $request->page - 1) * (int) $request->size)
+      ->limit((int) $request->size)
       ->get();
+    $count = Task::all();
     return response()->json([
       'data' => $data,
+      'total' => count($count),
       'access_token' => $request->token,
       'token_type' => 'bearer',
       'expires_in' => auth('api')->factory()->getTTL() * 60
@@ -539,7 +544,7 @@ class GameController extends Controller
     // return response()->download($task['download_url'], $request->game_name . '.zip');
 
     header("Content-type:text/html;charset=utf-8");
-    $file_name = $request->game_name.'.apk';
+    $file_name = $request->game_name . '.apk';
     $file_path = $task['download_url'];
 
     //首先要判断给定的文件存在与否
@@ -564,5 +569,44 @@ class GameController extends Controller
       echo $file_con;
     }
     fclose($fp);
+  }
+  /**
+   * @description: 获取游戏未绑定的渠道
+   * @param {type} 
+   * @return: 
+   */
+  public function get_exe_channel(Request $request)
+  {
+    $list = $this->get_json();
+    if ($request->game_id) {
+      $model = GameHasChannel::where('game_id', '=', $request->game_id)->get();
+      $channelId = [];
+      foreach ($model as $item) {
+        array_push($channelId, $item->channel_id);
+      }
+      $data = [];
+      foreach ($list as $i) {
+        if (!in_array($i->id, $channelId)) {
+          array_push($data, $i);
+        }
+      }
+      return response()->json([
+        'data' => $data,
+        'access_token' => $request->token,
+        'token_type' => 'bearer',
+        'expires_in' => auth('api')->factory()->getTTL() * 60
+      ]);
+    }
+  }
+  /**
+   * @description: 读取文件
+   * @param {type} 
+   * @return: 
+   */
+  public function get_json()
+  {
+    $path = 'D://wwwroot/MolePackageTool-Android/channels/channel.json';
+    $list = json_decode(Common::open_file($path));
+    return $list;
   }
 }

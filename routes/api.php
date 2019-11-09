@@ -67,6 +67,7 @@ $api->version('v1', function ($api){
         $api->post('upload_apk','App\Http\Controllers\GameController@upload_apk');
         $api->post('exec_bat','App\Http\Controllers\GameController@exec_bat');
         $api->post('get_tasks','App\Http\Controllers\GameController@get_tasks');
+        $api->post('get_exe_channel','App\Http\Controllers\GameController@get_exe_channel');
       });
 });
 

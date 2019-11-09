@@ -46,9 +46,9 @@ class Common
     // dd($zip->open($name, ZipArchive::CREATE | ZIPARCHIVE::OVERWRITE));
     if ($zip->open($name, ZipArchive::CREATE | ZIPARCHIVE::OVERWRITE) === TRUE) {
       Log::debug([
-        'path'=>$path
+        'path' => $path
       ]);
-      $zip->addFile($path); 
+      $zip->addFile($path);
       $zip->close();
       return true;
     }
@@ -59,9 +59,21 @@ class Common
    * @param {type} 
    * @return: 
    */
-  public static function copy_file($path,$toPath)
+  public static function copy_file($path, $toPath)
   {
-    $state = copy($path,$toPath);
+    $state = copy($path, $toPath);
     return $state;
-   }
+  }
+  /**
+   * @description: 读取文件内容
+   * @param {type} 
+   * @return: json
+   */
+  public static function open_file($path)
+  { 
+    $myfile = fopen($path,'r');
+    $json = fread($myfile,filesize($path));
+    fclose($myfile);
+    return $json;
+  }
 }

@@ -19,9 +19,11 @@ class News implements ShouldBroadcast
      *
      * @return void
      */
-    public function __construct()
+    protected $id = 0;
+    public function __construct($id)
     {
         //
+        $this->id = $id;
     }
 
     /**
@@ -31,7 +33,7 @@ class News implements ShouldBroadcast
      */
     public function broadcastOn()
     {
-        return new Channel('news');
+        return new Channel('tasks.'.$this->id);
     }
 
     public function broadcastWith(){

@@ -50,7 +50,7 @@ class ExecJob implements ShouldQueue
       ]);
       Upload::mkdir_dir($this->data['path'].'\\packs\\public\\apk\\'.$this->data['game_id'].'\\'.$this->data['channel_name'].'\\'.$this->data['version']);
       $state = Common::copy_file($this->data['path'].'\\MolePackageTool-Android\\workspace\\'.$this->data['game_id'].'\\'.$this->data['channel_name'].'\\output.apk',$this->data['path'].'\\packs\\public\\apk\\'.$this->data['game_id'].'\\'.$this->data['channel_name'].'\\'.$this->data['version'].'\\output.apk');
-      event(new News);
+      event(new News($this->data['uid']));
       Log::debug([
         'info'=>$state
       ]);

@@ -8,6 +8,8 @@ use App\Model\ChannelVersion;
 use App\Model\Game;
 use App\Model\GameHasChannel;
 use App\Model\Param;
+use App\Model\Signature;
+use App\Utils\Common;
 use App\Utils\Upload;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -18,6 +20,7 @@ class ChannelController extends Controller
 {
   protected $table_exec = ['id', 'json'];
   protected $table_arr = ['value'];
+  protected $path = 'D://wwwroot/';
   /**
    * ChannelController constructor.
    */
@@ -119,28 +122,6 @@ class ChannelController extends Controller
     $this->responseFailReturn($request);
   }
   /**
-   * @description: 添加渠道类型
-   * @param $request
-   * @return:
-   */
-  // protected function add_types($request)
-  // {
-  //   $arr = explode(',', $request->platform);
-  //   $typeArr =  Type::whereIn('name', $arr)->get()->toArray();
-  //   Log::debug($typeArr);
-  //   $newArr = [];
-  //   foreach ($typeArr as $item) {
-  //     array_push($newArr, [
-  //       'cid' => $request->cid,
-  //       'tid' => $item['id'],
-  //       'state' => 1
-  //     ]);
-  //   }
-  //   $state = DB::table('Channel_types')->insert($newArr);
-  //   Log::debug('type:' . $state);
-  //   return true;
-  // }
-  /**
    * @description:
    * @param $request
    * @return:
@@ -161,31 +142,33 @@ class ChannelController extends Controller
    * @param {type}
    * @return:
    */
-  public function get_data($request)
+  public function get_data($alias)
   {
-    $data = ChannelKey::leftJoin('channels', 'channels.id', '=', 'channel_keys.cid')
-      ->where('channel_keys.cid', '=', $request->cid)
-      ->select('channel_keys.abstract', 'channel_keys.id', 'channel_keys.key', 'channel_keys.cid','channels.name as cname')
-      ->get();
+    // $data = ChannelKey::leftJoin('channels', 'channels.id', '=', 'channel_keys.cid')
+    //   ->where('channel_keys.cid', '=', $request->cid)
+    //   ->select('channel_keys.abstract', 'channel_keys.id', 'channel_keys.key', 'channel_keys.cid','channels.name as cname')
+    //   ->get();
+    $path = $this->path . 'MolePackageTool-Android/channels/' . $alias . '/templates.json';
+    if (!is_file($path)) {
+      return json_encode((object) null);
+    }
+    $data = Common::open_file($path);
     return $data;
   }
   /**
-   * @description:
+   * @description:获取绑定的签名ID
    * @param $request
    * @return:
    */
   public function get_channel(Request $request)
   {
-    $data = Channel::find($request->id);
-    $gameHasChannel = GameHasChannel::where('game_id','=',$request->game_id)
-    ->where('channel_id','=',$request->id)
-    ->first();
-    Log::debug([
-      'info'=>$gameHasChannel
-    ]);
-    $data->signature_id = $gameHasChannel['signature_id'];
+    // $data = Channel::find($request->id);
+    $gameHasChannel = GameHasChannel::where('game_id', '=', $request->game_id)
+      ->where('channel_id', '=', $request->id)
+      ->first();
+    // $gameHasChannel->signature_id = $gameHasChannel['signature_id'];
     return response()->json([
-      'data' => $data,
+      'data' => $gameHasChannel,
       'access_token' => $request->token,
       'token_type' => 'bearer',
       'expires_in' => auth('api')->factory()->getTTL() * 60
@@ -256,11 +239,17 @@ class ChannelController extends Controller
   public function save_params(Request $request)
   {
     $model = $request->all();
-    $game = Game::find($model['g_id']);
-    $channel = Channel::find($request->channel_id);
-    if($this->update_params($model)){
+    $game = Game::find($model['game_id']);
+    // $channel = Channel::find($request->channel_id);
+    $list = $this->get_json();
+    foreach ($list as $item) {
+      if ($item->id == $model['channel_id']) {
+        $channel = $item;
+      }
+    }
+    if ($this->update_params($model)) {
       $this->update_channel_version($model);
-      $this->make_file($model,$channel,$game);
+      $this->make_file($model, $channel, $game);
     }
     return response()->json([
       'access_token' => $request->token,
@@ -273,29 +262,12 @@ class ChannelController extends Controller
    * @param {type} 
    * @return: 
    */
-  protected function update_channel_version($model){
-    $gameHasChannel = GameHasChannel::find($model['gc_id']);
-    if(isset($model['form']['signature_id']) && $model['form']['signature_id'] !== $gameHasChannel['signature_id'])
-    {
-      $gameHasChannel->signature_id = $model['form']['signature_id'];
+  protected function update_channel_version($model)
+  {
+    $gameHasChannel = GameHasChannel::where('game_id', '=', $model['game_id'])->where('channel_id', '=', $model['channel_id'])->first();
+    if ($model['signature_id']) {
+      $gameHasChannel->signature_id = $model['signature_id'];
       $gameHasChannel->save();
-    }
-    if(isset($model['channel_version'])){
-      $cVersion = ChannelVersion::where('val','=',$model['channel_version'])
-      ->where('gc_id','=',$gameHasChannel->id)
-      ->first();
-      if(!$cVersion){
-        $cVersion = new ChannelVersion;
-        $cVersion->gc_id = $gameHasChannel->id;
-        $cVersion->val = $model['channel_version'];
-      }
-      if(isset($model['compile'])){
-        $cVersion->compile = $model['compile'];
-      }
-      if(isset($model['gameSettings'])){
-        $cVersion->gameSettings = $model['gameSettings'];
-      }
-      $cVersion->save();
     }
     return true;
   }
@@ -304,27 +276,26 @@ class ChannelController extends Controller
    * @param {type} 
    * @return: 
    */
-  protected function update_params($model){
-    foreach ($model['data'] as $data) {
-      $dat = Param::where('ck_id', '=', $data['id'])
-      ->where('userId','=',$this->get_userId())
-      ->first();
-      if (!$dat) {
-        $dat = new Param;
-        $dat->ck_id = $data['id'];
+  protected function update_params($model)
+  {
+    foreach ($model['data'] as $item) {
+      foreach ($item['params'] as $data) {
+        $params = Param::where('game_id', '=', $model['game_id'])
+          ->where('channel_id', '=', $model['channel_id'])
+          ->where('keys', '=', $data['key'])
+          ->first();
+        if (!$params) {
+          $params = new Param;
+          $params->keys = $data['key'];
+          $params->game_id = $model['game_id'];
+          $params->channel_id = $model['channel_id'];
+        }
+        $params->type = $item['id'];
+        if (isset($data['value'])) {
+          $params->val = $data['value'];
+          $params->save();
+        }
       }
-      $dat->userId = $this->get_userId();
-      $dat->gc_id = $model['gc_id'];
-      if(isset($data['value'])){
-        $dat->val = $data['value'];
-        if (isset($data['compile'])) {
-          $dat->compile = $data['compile'];
-        }
-        if (isset($data['gameSettings'])) {
-          $dat->gameSettings = $data['gameSettings'];
-        }
-        $dat->save();
-      } 
     }
     return true;
   }
@@ -333,34 +304,50 @@ class ChannelController extends Controller
    * @param $model
    * @return: json
    */
-  protected function make_file($model,$channel,$game)
+  protected function make_file($model, $channel, $game)
   {
-    $path = '../../MolePackageTool-Android/channels/' . $channel['alias'].'/configs/'.$game['game_id']. '/assets';
-    Upload::touch_file($path . '/channel.txt', $model['channelId']);
-    $compile = [];
-    $gameSettings = [];
-    foreach ($model['data'] as $key => $data) {
-      if (isset($data['compile']) && $data['compile']) {
-        $compile[$data['key']] = $data['value'];
+    $path = '../../MolePackageTool-Android/channels/' . $channel->name . '/configs/' . $game['game_id'] . '/assets';
+    // Upload::touch_file($path . '/channel.txt', $model['channelId']);
+    foreach ($model['data'] as $item) {
+      $path = '../../MolePackageTool-Android/channels/' . $channel->name . '/configs/' . $game['game_id'] . '/' . $item['id'] . '.json';
+      $json = [];
+      if ($model['signature_id'] && $item['id'] == 2) {
+        $sign = Signature::find($model['signature_id']);
+        $sign_path = $this->get_dir() . $sign->file;
+        $json = [];
+        $json['keystore'] = $sign_path;
+        $json['password'] = $sign->password;
+        $json['alias'] = $sign->alias;
+        $json['alias_password'] = $sign->alias_password;
       }
-      if (isset($data['gameSettings'])  && $data['gameSettings']) {
-        $gameSettings[$data['key']] = $data['value'];
+      foreach ($item['params'] as $i) {
+        if (isset($i['value'])) {
+          $json[$i['key']] = $i['value'];
+          // array_push($json, [
+          //   $i['key'] => $i['value']
+          // ]);
+        } else {
+          $json[$i['key']] = '';
+        }
       }
+      Upload::touch_file($path, json_encode($json, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
     }
-    if(isset($model['compile']) && $model['compile']){
-      $compile['channel_version'] = $model['channel_version'];
-    }
-    if(isset($model['gameSettings']) && $model['gameSettings']){
-      $gameSettings['channel_version'] = $model['channel_version'];
-    }
-    if (count($gameSettings) > 0) {
-      $path = '../../MolePackageTool-Android/channels/' . $channel['alias'] . '/configs/'.$game['game_id']. '/assets/gameSetting.json';
-      Upload::touch_file($path, json_encode($gameSettings, JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE));
-    }
-    if (count($compile) > 0) {
-      $path = '../../MolePackageTool-Android/channels/' . $channel['alias'] . '/configs/'.$game['game_id'].'/package.json';
-      Upload::touch_file($path, json_encode($compile, JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE));
-    }
+    return true;
+    // if (count($gameSettings) > 0) {
+    //   $path = '../../MolePackageTool-Android/channels/' . $channel['alias'] . '/configs/' . $game['game_id'] . '/assets/gameSetting.json';
+
+    // }
+    // if (count($compile) > 0) {
+    //   $path = '../../MolePackageTool-Android/channels/' . $channel['alias'] . '/configs/' . $game['game_id'] . '/package.json';
+    //   Upload::touch_file($path, json_encode($compile, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+    // }
+  }
+  public function get_dir()
+  {
+    $path = dirname(dirname($_SERVER['DOCUMENT_ROOT']));
+    $path_arr = explode('\\', $path);
+    $path_dir = implode('/', $path_arr);
+    return $path_dir;
   }
   /**
    * @description: 获取渠道配置参数
@@ -369,21 +356,19 @@ class ChannelController extends Controller
    */
   public function get_params_value(Request $request)
   {
-    $channelParams = $this->get_data($request);;
-    $channelParams = json_decode(json_encode($channelParams), true);
-    foreach ($channelParams as $key => $item) {
-      $data = Param::where('ck_id', '=', $item['id'])
-      ->where('userId','=',$this->get_userId())
-      ->first();
-      if ($data) {
-        $channelParams[$key]['value'] = $data->val;
-        $channelParams[$key]['compile'] = false;
-        $channelParams[$key]['gameSettings'] = false;
-        if($data->compile == 1){
-          $channelParams[$key]['compile'] = true;
+    $model = $request->all();
+    $channelParams = json_decode($this->get_data($model['channel']['alias']), true);
+    $param = Param::where('game_id', '=', $request->gid)->get();
+    foreach ($channelParams as $k => $item) {
+      $data = $item['params'];
+      foreach ($data as $key => $i) {
+        if (isset($i['default'])) {
+          $channelParams[$k]['params'][$key]['value'] = $i['default'];
         }
-        if($data->gameSettings == 1){
-          $channelParams[$key]['gameSettings'] = true;
+        foreach ($param as $p) {
+          if ($p['keys'] == $i['key']) {
+            $channelParams[$k]['params'][$key]['value'] = $p['val'];
+          }
         }
       }
     }
@@ -393,5 +378,16 @@ class ChannelController extends Controller
       'token_type' => 'bearer',
       'expires_in' => auth('api')->factory()->getTTL() * 60
     ], 200);
+  }
+  /**
+   * @description: 读取文件
+   * @param {type} 
+   * @return: 
+   */
+  public function get_json()
+  {
+    $path = 'D://wwwroot/MolePackageTool-Android/channels/channel.json';
+    $list = json_decode(Common::open_file($path));
+    return $list;
   }
 }

@@ -31,7 +31,7 @@ class PermissionController extends Controller
       ],200);
     }
     /**
-     * @description: 
+     * @description: 添加权限
      * @param $request
      * @return: 
      */
@@ -48,6 +48,11 @@ class PermissionController extends Controller
         'expires_in' => auth('api')->factory()->getTTL() * 60,
       ],200);
     }
+    /**
+     * @description: 创建权限
+     * @param {type} 
+     * @return: 
+     */
     protected function created($request){
       SpatiePermission::create([
         'name'=>$request['name'],
@@ -60,7 +65,7 @@ class PermissionController extends Controller
       return true;
     }
     /**
-     * @description: 
+     * @description: 保存修改
      * @param $request
      * @return: 
      */
@@ -80,7 +85,7 @@ class PermissionController extends Controller
         return $sql;
     }
     /**
-     * @description: 
+     * @description: 获取列表
      * @param $request 
      * @return: 
      */
